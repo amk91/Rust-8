@@ -6,3 +6,5 @@ authors = ["amk"]
 [dependencies]
 rand = "*"
 termion = "*"
+termios = "*"
+adi_clock = "*"
