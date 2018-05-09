@@ -1,10 +1,8 @@
 use std::{thread, time::Duration, sync::Arc, sync::RwLock,
-		env, fs::File,
-		io, io::Read, io::Write,
-		prelude::*};
+		fs::File, io, io::Read, io::Write};
 
 extern crate rand;
-use rand::{Rng, thread_rng};
+use rand::{Rng};
 
 extern crate termion;
 use termion::raw::IntoRawMode;
@@ -19,7 +17,6 @@ const N_STACK: usize = 32;
 const N_FRAMEBUFFER_WIDTH: usize = 64;
 const N_FRAMEBUFFER_HEIGHT: usize = 32;
 const N_MEMORY: usize = 4096;
-const N_SPRITE_BYTES: usize = 5;
 
 type Registers = [u8; N_REGISTERS];
 type Stack = [u16; N_STACK];
@@ -87,153 +84,150 @@ fn call_addr(address: u16, sp: &mut u8,
 	*pc = address;
 }
 
-fn se(vx: usize, value: u8, V: &mut Registers,
+fn se(vx: usize, value: u8, registers: &mut Registers,
 	pc: &mut u16)
 {
-	if V[vx] == value
+	if registers[vx] == value
 	{
 		*pc += 1;
 	}
 }
 
-fn sne(vx: usize, value: u8, V: &mut Registers,
+fn sne(vx: usize, value: u8, registers: &mut Registers,
 	pc: &mut u16)
 {
-	if V[vx] != value
+	if registers[vx] != value
 	{
 		*pc += 1;
 	}
 }
 
-fn se_regs(vx: usize, vy: usize, V: &mut Registers,
+fn se_regs(vx: usize, vy: usize, registers: &mut Registers,
 	pc: &mut u16)
 {
-	if V[vx] == V[vy]
+	if registers[vx] == registers[vy]
 	{
 		*pc += 1;
 	}
 }
 
-fn ld(vx: usize, value: u8, V: &mut Registers)
+fn ld(vx: usize, value: u8, registers: &mut Registers)
 {
-	V[vx] = value;
+	registers[vx] = value;
 }
 
-fn add(vx: usize, value: u8, V: &mut Registers)
+fn add(vx: usize, value: u8, registers: &mut Registers)
 {
-	V[vx] += value;
+	registers[vx] += value;
 }
 
-fn ld_regs(vx: usize, vy: usize, V: &mut Registers)
+fn ld_regs(vx: usize, vy: usize, registers: &mut Registers)
 {
-	V[vx] = V[vy];
+	registers[vx] = registers[vy];
 }
 
-fn or(vx: usize, vy: usize, V: &mut Registers)
+fn or(vx: usize, vy: usize, registers: &mut Registers)
 {
-	V[vx] |= V[vy];
+	registers[vx] |= registers[vy];
 }
 
-fn and(vx: usize, vy: usize, V: &mut Registers)
+fn and(vx: usize, vy: usize, registers: &mut Registers)
 {
-	V[vx] &= V[vy];
+	registers[vx] &= registers[vy];
 }
 
-fn xor(vx: usize, vy: usize, V: &mut Registers)
+fn xor(vx: usize, vy: usize, registers: &mut Registers)
 {
-	V[vx] ^= V[vy];
+	registers[vx] ^= registers[vy];
 }
 
-fn add_regs(vx: usize, vy: usize, V: &mut Registers)
+fn add_regs(vx: usize, vy: usize, registers: &mut Registers)
 {
-	let result = V[vx].overflowing_add(V[vy]);
-	V[vx] = result.0;
-	V[N_REGISTERS - 1] = result.1 as u8;
+	let result = registers[vx].overflowing_add(registers[vy]);
+	registers[vx] = result.0;
+	registers[N_REGISTERS - 1] = result.1 as u8;
 }
 
-fn sub_regs(vx: usize, vy: usize, V: &mut Registers)
+fn sub_regs(vx: usize, vy: usize, registers: &mut Registers)
 {
-	let result = V[vx].overflowing_sub(V[vy]);
-	V[vx] = result.0;
-	V[N_REGISTERS - 1] = result.1 as u8;
+	let result = registers[vx].overflowing_sub(registers[vy]);
+	registers[vx] = result.0;
+	registers[N_REGISTERS - 1] = result.1 as u8;
 }
 
-fn shr(vx: usize, V: &mut Registers)
+fn shr(vx: usize, registers: &mut Registers)
 {
-	let lsb = 0b00000001;
-	V[N_REGISTERS - 1] = V[vx] & lsb;
-	V[vx] /= 2;
+	let lsb = 0b0000_0001;
+	registers[N_REGISTERS - 1] = registers[vx] & lsb;
+	registers[vx] /= 2;
 }
 
-fn subn_regs(vx: usize, vy: usize, V: &mut Registers)
+fn subn_regs(vx: usize, vy: usize, registers: &mut Registers)
 {
-	let result = V[vy].overflowing_sub(V[vx]);
-	V[vx] = result.0;
-	V[N_REGISTERS - 1] = result.1 as u8;
+	let result = registers[vy].overflowing_sub(registers[vx]);
+	registers[vx] = result.0;
+	registers[N_REGISTERS - 1] = result.1 as u8;
 }
 
-fn shl(vx: usize, V: &mut Registers)
+fn shl(vx: usize, registers: &mut Registers)
 {
-	let msb = 0b10000000;
-	V[N_REGISTERS - 1] = V[vx] & msb;
-	V[vx] *= 2;
+	let msb = 0b1000_0000;
+	registers[N_REGISTERS - 1] = registers[vx] & msb;
+	registers[vx] *= 2;
 }
 
-fn sne_regs(vx: usize, vy: usize, V: &mut Registers,
+fn sne_regs(vx: usize, vy: usize, registers: &mut Registers,
 	pc: &mut u16)
 {
-	if V[vx] != V[vy]
+	if registers[vx] != registers[vy]
 	{
 		*pc += 1;
 	}
 }
 
-fn ld_reg_index(address: u16, I: &mut u16)
+fn ld_reg_index(address: u16, index_register: &mut u16)
 {
-	*I = address;
+	*index_register = address;
 }
 
 fn jp_v0(address: u16, pc: &mut u16,
-	V: &Registers)
+	registers: &Registers)
 {
-	*pc = V[0] as u16 + address;
+	*pc = u16::from(registers[0]) + address;
 }
 
-fn rnd(vx: usize, value: u8, V: &mut Registers)
+fn rnd(vx: usize, value: u8, registers: &mut Registers)
 {
 	let mut rng = rand::thread_rng();
 	let result: u8 = rng.gen::<u8>() & value;
-	V[vx] = result;
+	registers[vx] = result;
 }
 
 fn drw(vx: usize, vy: usize, bytes_number: u8,
-	V: &mut Registers, I: u16, memory: &Memory,
+	registers: &mut Registers, index_register: u16, memory: &Memory,
 	frame_buffer: &mut FrameBuffer)
 {
-	let x = V[vx] as usize;
-	let y = V[vy] as usize;
-
 	for byte in 0..bytes_number
 	{
-		let sprite_index = memory[(I + byte as u16) as usize] as usize;
-		if sprite_index >= 0 && sprite_index < 16
+		let sprite_index = memory[(index_register + u16::from(byte)) as usize] as usize;
+		if sprite_index < 16
 		{
 			let sprite = SPRITES[sprite_index];
 			for j in 0..sprite.len()
 			{
 				for i in 0..8
 				{
-					let old_pixel = frame_buffer[j][i];
-					let new_pixel = sprite[j] & (1 << 8 - i) > 0;
+					let x = N_FRAMEBUFFER_WIDTH % (i + registers[vx] as usize);
+					let y = N_FRAMEBUFFER_HEIGHT % (j + registers[vy] as usize);
 
-					let x_index = N_FRAMEBUFFER_WIDTH % i;
-					let y_index = N_FRAMEBUFFER_HEIGHT % j;
+					let old_pixel = frame_buffer[y][x];
+					let new_pixel = sprite[j] & 1 << (8 - i) > 0;
 
-					frame_buffer[y_index][x_index] ^= new_pixel;
+					frame_buffer[y][x] ^= new_pixel;
 
-					if old_pixel == true && new_pixel == true
+					if old_pixel && new_pixel
 					{
-						V[0xF - 1] = 1;
+						registers[0xF - 1] = 1;
 					}
 				}
 			}
@@ -242,78 +236,75 @@ fn drw(vx: usize, vy: usize, bytes_number: u8,
 }
 
 fn skp(vx: usize, key_pressed: u8,
-	V: &Registers, pc: &mut u16)
+	registers: &Registers, pc: &mut u16)
 {
-	if V[vx] == key_pressed
+	if registers[vx] == key_pressed
 	{
 		*pc += 2;
 	}
 }
 
 fn sknp(vx: usize, key_pressed: u8,
-	V: &Registers, pc: &mut u16)
+	registers: &Registers, pc: &mut u16)
 {
-	if V[vx] != key_pressed
+	if registers[vx] != key_pressed
 	{
 		*pc += 2;
 	}
 }
 
-fn ld_delay_to_reg(vx: usize, delay_timer: Arc<RwLock<u8>>, V: &mut Registers)
+fn ld_delay_to_reg(vx: usize, delay_timer: Arc<RwLock<u8>>, registers: &mut Registers)
 {
 	let delay_timer = delay_timer.read().unwrap();
-	V[0] = *delay_timer;
+	registers[vx] = *delay_timer;
 }
 
-fn ld_key(vx: usize, V: &mut Registers,
+fn ld_key(vx: usize, registers: &mut Registers,
 	stdin: &mut io::Stdin, stdout: &io::Stdout)
 {
 	let mut buffer : [u8; 1] = [0; 1];
 	stdout.lock().flush().unwrap();
 	stdin.read_exact(&mut buffer).unwrap();
-	V[vx] = buffer[0];
+	registers[vx] = buffer[0];
 }
 
-fn ld_reg_to_delay(vx: usize, delay_timer: Arc<RwLock<u8>>, V: &Registers)
+fn ld_reg_to_delay(vx: usize, delay_timer: Arc<RwLock<u8>>, registers: &Registers)
 {
 	let mut delay_timer = delay_timer.write().unwrap();
-	*delay_timer = V[vx];
+	*delay_timer = registers[vx];
 }
 
-fn ld_reg_to_sound(vx: usize, sound_timer: Arc<RwLock<u8>>, V: &Registers)
+fn ld_reg_to_sound(vx: usize, sound_timer: Arc<RwLock<u8>>, registers: &Registers)
 {
 	let mut sound_timer = sound_timer.write().unwrap();
-	*sound_timer = V[vx];
+	*sound_timer = registers[vx];
 }
 
-fn add_reg_index(vx: usize, I: &mut u16, V: &Registers)
+fn add_reg_index(vx: usize, index_register: &mut u16, registers: &Registers)
 {
-	*I += V[vx] as u16;
+	*index_register += u16::from(registers[vx]);
 }
 
-fn set_sprite(vx: usize, V: &Registers, I: &mut u16)
+fn set_sprite(vx: usize, registers: &Registers, index_register: &mut u16)
 {
-	if V[vx] >= 0 && V[vx] <= 9
+	if registers[vx] <= 9 ||
+		(registers[vx] >= 'A'.to_digit(10).unwrap() as u8 &&
+		registers[vx] <= 'F'.to_digit(10).unwrap() as u8)
 	{
-		*I = V[vx] as u16;
-	}
-	else if V[vx] >= 'A'.to_digit(10).unwrap() as u8 &&
-		V[vx] <= 'F'.to_digit(10).unwrap() as u8
-	{
-		*I = V[vx] as u16;
+		*index_register = u16::from(registers[vx]);
 	}
 }
 
-fn store_bcd(vx: usize, V: &Registers,
-	I: &u16, memory: &mut Memory)
+fn store_bcd(vx: usize, registers: &Registers,
+	index_register: &u16, memory: &mut Memory)
 {
-	let h = V[vx] / 100 & 0b00000111;
-	let d = V[vx] / 10 & 0b00000111;
-	let u = V[vx] & 0b00000111;
+	let h = (registers[vx] / 100) & 0b0000_0111;
+	let d = (registers[vx] / 10) & 0b0000_0111;
+	let u = registers[vx] & 0b0000_0111;
 
-	memory[*I as usize] = h;
-	memory[(*I + 1) as usize] = d;
-	memory[(*I + 2) as usize] = u;
+	memory[*index_register as usize] = h;
+	memory[(*index_register + 1) as usize] = d;
+	memory[(*index_register + 2) as usize] = u;
 }
 
 fn get_op_code(memory: &Memory, pc: &u16) -> OpCode
@@ -324,40 +315,40 @@ fn get_op_code(memory: &Memory, pc: &u16) -> OpCode
 	{
 		0 =>
 		{
-			op_code.variant = Some(0b00001111 & memory[(*pc + 1) as usize])
+			op_code.variant = Some(0b0000_1111 & memory[(*pc + 1) as usize])
 		},
 
 		1 | 2 | 0xA | 0xB =>
 		{
-			let mut address = ((0b00001111 & memory[*pc as usize]) as u16) << 8;
-			address |= memory[(*pc + 1) as usize] as u16;
+			let mut address = u16::from((0b0000_1111 & memory[*pc as usize])) << 8;
+			address |= u16::from(memory[(*pc + 1) as usize]);
 
 			op_code.x = Some(address)
 		},
 
 		3 | 4 | 6 | 7=>
 		{
-			op_code.x = Some((0b00001111 & memory[*pc as usize]) as u16);
-			op_code.y = Some(memory[(*pc + 1) as usize] as u16)
+			op_code.x = Some(u16::from(0b0000_1111 & memory[*pc as usize]));
+			op_code.y = Some(u16::from(memory[(*pc + 1) as usize]))
 		},
 
 		5 | 8 | 9 =>
 		{
-			op_code.x = Some((0b00001111 & memory[*pc as usize]) as u16);
-			op_code.y = Some((0b11110000 & memory[(*pc + 1) as usize]) as u16);
-			op_code.variant = Some(0b00001111 & memory[(*pc + 1) as usize])
+			op_code.x = Some(u16::from(0b0000_1111 & memory[*pc as usize]));
+			op_code.y = Some(u16::from(0b1111_0000 & memory[(*pc + 1) as usize]));
+			op_code.variant = Some(0b0000_1111 & memory[(*pc + 1) as usize])
 		},
 
 		0xC =>
 		{
-			op_code.x = Some((0b00001111 & memory[*pc as usize]) as u16);
-			op_code.y = Some(memory[(*pc + 1) as usize] as u16)
+			op_code.x = Some(u16::from(0b0000_1111 & memory[*pc as usize]));
+			op_code.y = Some(u16::from(memory[(*pc + 1) as usize]))
 		},
 
 		0xE | 0xF =>
 		{
-			op_code.x = Some((0b00001111 & memory[*pc as usize]) as u16);
-			op_code.variant = Some(memory[(*pc + 1) as usize]);
+			op_code.x = Some(u16::from(0b0000_1111 & memory[*pc as usize]));
+			op_code.variant = Some(memory[(*pc + 1) as usize])
 		},
 
 		_ => { },
@@ -416,12 +407,7 @@ fn draw(frame_buffer: &FrameBuffer, stdout: &io::Stdout)
 	{
 		for j in 0..frame_buffer[i].len()
 		{
-			let mut c = " ";
-			if !frame_buffer[i][j]
-			{
-				c = "▓";
-			}
-
+			let c = if !frame_buffer[i][j] { "▓" } else { " " };
 			write!(stdout, "{}{}", termion::cursor::Goto(i as u16 + 1, j as u16 + 1), c).unwrap();
 		}
 	}
@@ -429,8 +415,8 @@ fn draw(frame_buffer: &FrameBuffer, stdout: &io::Stdout)
 
 fn main()
 {
-	let mut I: u16 = 0b0;
-	let mut V: Registers = [0; N_REGISTERS];
+	let mut index_register: u16 = 0b0;
+	let mut registers: Registers = [0; N_REGISTERS];
 
 	let mut sp: u8 = 0b0;
 	let mut stack: Stack = [0; N_STACK];
@@ -460,11 +446,7 @@ fn main()
 	loop
 	{
 		let op = get_op_code(&memory, &pc);
-		if op.x.is_none() || op.y.is_none() || op.variant.is_none()
-		{
-			//TODO: raise error
-		}
-		else
+		if op.x.is_some() && op.y.is_some() && op.variant.is_some()
 		{
 			let x = op.x.unwrap();
 			let y = op.y.unwrap();
@@ -486,24 +468,24 @@ fn main()
 				},
 				0x1 => jp_addr(x, &mut pc),
 				0x2 => call_addr(x, &mut sp, &mut pc, &mut stack),
-				0x3 => se(x as usize, y as u8, &mut V, &mut pc),
-				0x4 => sne(x as usize, y as u8, &mut V, &mut pc),
-				0x5 => se_regs(x as usize, y as usize, &mut V, &mut pc),
-				0x6 => ld(x as usize, y as u8, &mut V),
-				0x7 => add(x as usize, y as u8, &mut V),
+				0x3 => se(x as usize, y as u8, &mut registers, &mut pc),
+				0x4 => sne(x as usize, y as u8, &mut registers, &mut pc),
+				0x5 => se_regs(x as usize, y as usize, &mut registers, &mut pc),
+				0x6 => ld(x as usize, y as u8, &mut registers),
+				0x7 => add(x as usize, y as u8, &mut registers),
 				0x8 =>
 				{
 					match variant
 					{
-						0x0 => ld_regs(x as usize, y as usize, &mut V),
-						0x1 => or(x as usize, y as usize, &mut V),
-						0x2 => and(x as usize, y as usize, &mut V),
-						0x3 => xor(x as usize, y as usize, &mut V),
-						0x4 => add_regs(x as usize, y as usize, &mut V),
-						0x5 => sub_regs(x as usize, y as usize, &mut V),
-						0x6 => shr(x as usize, &mut V),
-						0x7 => subn_regs(x as usize, y as usize, &mut V),
-						0xE => shl(x as usize, &mut V),
+						0x0 => ld_regs(x as usize, y as usize, &mut registers),
+						0x1 => or(x as usize, y as usize, &mut registers),
+						0x2 => and(x as usize, y as usize, &mut registers),
+						0x3 => xor(x as usize, y as usize, &mut registers),
+						0x4 => add_regs(x as usize, y as usize, &mut registers),
+						0x5 => sub_regs(x as usize, y as usize, &mut registers),
+						0x6 => shr(x as usize, &mut registers),
+						0x7 => subn_regs(x as usize, y as usize, &mut registers),
+						0xE => shl(x as usize, &mut registers),
 
 						_ =>
 						{
@@ -511,18 +493,18 @@ fn main()
 						}
 					}
 				}
-				0x9 => sne_regs(x as usize, y as usize, &mut V, &mut pc),
+				0x9 => sne_regs(x as usize, y as usize, &mut registers, &mut pc),
 				0xA => ld_reg_index(x, &mut pc),
-				0xB => jp_v0(x, &mut pc, &mut V),
-				0xC => rnd(x as usize, y as u8, &mut V),
+				0xB => jp_v0(x, &mut pc, &registers),
+				0xC => rnd(x as usize, y as u8, &mut registers),
 				0xF =>
 				{
 					match variant
 					{
-						0x07 => ld_delay_to_reg(x as usize, delay_timer.clone(), &mut V),
-						0x15 => ld_reg_to_delay(x as usize, delay_timer.clone(), &V),
-						0x18 => ld_reg_to_sound(x as usize, sound_timer.clone(), &V),
-						0x1E => add_reg_index(x as usize, &mut I, &V),
+						0x07 => ld_delay_to_reg(x as usize, delay_timer.clone(), &mut registers),
+						0x15 => ld_reg_to_delay(x as usize, delay_timer.clone(), &registers),
+						0x18 => ld_reg_to_sound(x as usize, sound_timer.clone(), &registers),
+						0x1E => add_reg_index(x as usize, &mut index_register, &registers),
 						
 
 						_ =>
