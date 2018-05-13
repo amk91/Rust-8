@@ -1,6 +1,7 @@
 use std::io::{Read, Stdin, Stdout, Write};
 use std::sync::{Arc, Mutex};
-use std::{thread, fs::File, sync::RwLock, time::Duration};
+use std::time::{Duration, Instant};
+use std::{thread, fs::File};
 
 extern crate rand;
 use rand::Rng;
@@ -15,6 +16,9 @@ const N_STACK: usize = 32;
 const N_FRAMEBUFFER_WIDTH: usize = 64;
 const N_FRAMEBUFFER_HEIGHT: usize = 32;
 const N_MEMORY: usize = 4096;
+
+const MAIN_THREAD_MS: u32 = 2;
+const SEC_THREAD_MS: u32 = 17;
 
 type Registers = [u8; N_REGISTERS];
 type Stack = [u16; N_STACK];
@@ -68,7 +72,12 @@ fn jp_addr(address: u16, program_counter: &mut u16) {
     *program_counter = address;
 }
 
-fn call_addr(address: u16, stack_pointer: &mut usize, program_counter: &mut u16, stack: &mut Stack) {
+fn call_addr(
+    address: u16,
+    stack_pointer: &mut usize,
+    program_counter: &mut u16,
+    stack: &mut Stack,
+) {
     *stack_pointer += 1;
     stack[*stack_pointer] = *program_counter;
     *program_counter = address;
@@ -197,15 +206,26 @@ fn drw(
     }
 }
 
-fn skp(vx: usize, key_pressed: u8, registers: &Registers, program_counter: &mut u16) {
-    if registers[vx] == key_pressed {
-        *program_counter += 2;
+fn skp(vx: usize, key: Option<u8>, registers: &Registers, program_counter: &mut u16) {
+    match key {
+    	Some(key) => {
+		    if registers[vx] == key {
+		        *program_counter += 2;
+		    }
+    	},
+    	None => {},
     }
+
 }
 
-fn sknp(vx: usize, key_pressed: u8, registers: &Registers, program_counter: &mut u16) {
-    if registers[vx] != key_pressed {
-        *program_counter += 2;
+fn sknp(vx: usize, key: Option<u8>, registers: &Registers, program_counter: &mut u16) {
+    match key {
+    	Some(key) => {
+		    if registers[vx] != key {
+		        *program_counter += 2;
+		    }
+    	},
+    	None => {},
     }
 }
 
@@ -215,16 +235,16 @@ fn ld_delay_to_reg(vx: usize, delay_timer: Arc<Mutex<u8>>, registers: &mut Regis
 }
 
 fn ld_key(vx: usize, registers: &mut Registers) {
-    let stdin = std::io::stdin();
-    for c in stdin.keys() {
-    	match c.unwrap() {
-    		Key::Char(c) => println!("Ok"),
-    		_ => {}
-    	}
-    }
+    // let stdin = std::io::stdin();
+    // for c in stdin.keys() {
+    // 	match c.unwrap() {
+    // 		Key::Char(c) => println!("Ok"),
+    // 		_ => {}
+    // 	}
+    // }
 
-    let mut stdout = std::io::stdout().into_raw_mode().unwrap();
-    stdout.flush().unwrap();
+    // let mut stdout = std::io::stdout().into_raw_mode().unwrap();
+    // stdout.flush().unwrap();
 }
 
 fn ld_reg_to_delay(vx: usize, delay_timer: Arc<Mutex<u8>>, registers: &Registers) {
@@ -260,11 +280,11 @@ fn ld_bcd(vx: usize, registers: &Registers, index_register: &u16, memory: &mut M
 }
 
 fn ld_x_regs(vx: usize, registers: &mut Registers, index_register: &mut u16, memory: &Memory) {
-	for i in 0..=vx {
-		registers[i] = memory[usize::from(*index_register) + i];
-	}
+    for i in 0..=vx {
+        registers[i] = memory[usize::from(*index_register) + i];
+    }
 
-	*index_register += (vx + 1) as u16;
+    *index_register += (vx + 1) as u16;
 }
 
 fn get_op_code(memory: &Memory, program_counter: &u16) -> OpCode {
@@ -324,8 +344,15 @@ fn load_rom(filepath: String, memory: &mut Memory) {
     }
 }
 
-fn tick_60hz(delay_timer: Arc<Mutex<u8>>, sound_timer: Arc<Mutex<u8>>) {
+fn tick_60hz(
+	delay_timer: Arc<Mutex<u8>>,
+	sound_timer: Arc<Mutex<u8>>,
+	frame_buffer: Arc<Mutex<FrameBuffer>>
+) {
+	let stdout = std::io::stdout();
+
     loop {
+        let thread_duration = Instant::now();
         {
             let mut delay_timer = delay_timer.lock().unwrap();
             if *delay_timer > 0 {
@@ -341,8 +368,13 @@ fn tick_60hz(delay_timer: Arc<Mutex<u8>>, sound_timer: Arc<Mutex<u8>>) {
             }
         }
 
-        //TODO: calculate dynamic sleep duration
-        thread::sleep(Duration::from_millis(17));
+        draw(Arc::clone(&frame_buffer), &stdout);
+
+        let thread_duration = thread_duration.elapsed().subsec_nanos() / 1_000_000;
+        if thread_duration < SEC_THREAD_MS {
+        	let thread_duration: u64 = (SEC_THREAD_MS - thread_duration).into();
+        	thread::sleep(Duration::from_millis(thread_duration));
+        }
     }
 }
 
@@ -360,6 +392,8 @@ fn draw(frame_buffer: Arc<Mutex<FrameBuffer>>, stdout: &Stdout) {
             ).unwrap();
         }
     }
+
+    write!(stdout, "{}", termion::cursor::Hide).unwrap();
 }
 
 fn main() {
@@ -381,21 +415,42 @@ fn main() {
     {
         let delay_timer = Arc::clone(&delay_timer);
         let sound_timer = Arc::clone(&sound_timer);
-        thread::spawn(|| tick_60hz(delay_timer, sound_timer));
+        let frame_buffer = Arc::clone(&frame_buffer);
+        thread::spawn(|| tick_60hz(delay_timer, sound_timer, frame_buffer));
     }
 
     // Setup of async input handler
     let mut stdin = termion::async_stdin().bytes();
-    let stdout = std::io::stdout();
-    let mut key_pressed = 0;
-    //draw(Arc::clone(&frame_buffer), &stdout);
-
-    draw(Arc::clone(&frame_buffer), &stdout);
-
-    ld_key(0, &mut registers);
-    println!("hello");
 
     loop {
+    	let thread_duration = Instant::now();
+
+    	let key_pressed = stdin.next();
+    	let mut key: Option<u8> = None;
+    	match key_pressed {
+    		Some(key_pressed) => {
+    			match key_pressed.unwrap() {
+    				b'1' => key = Some(b'1'),
+    				b'2' => key = Some(b'2'),
+    				b'3' => key = Some(b'3'),
+    				b'4' => key = Some(b'C'),
+    				b'q' => key = Some(b'4'),
+    				b'w' => key = Some(b'5'),
+    				b'e' => key = Some(b'6'),
+    				b'r' => key = Some(b'D'),
+    				b'a' => key = Some(b'7'),
+    				b's' => key = Some(b'8'),
+    				b'd' => key = Some(b'9'),
+    				b'f' => key = Some(b'E'),
+    				b'z' => key = Some(b'A'),
+    				b'x' => key = Some(b'0'),
+    				b'c' => key = Some(b'B'),
+    				b'v' => key = Some(b'F'),
+    				_ => key = None,
+    			}
+    		}
+    		_ => key = None,
+    	};
 
         let op = get_op_code(&memory, &program_counter);
         if op.x.is_some() && op.y.is_some() && op.variant.is_some() {
@@ -451,14 +506,14 @@ fn main() {
                     Arc::clone(&frame_buffer),
                 ),
                 0xE => {
-                	match variant {
-                		0x9E => skp(x as usize, key_pressed, &registers, &mut program_counter),
-                		0xA1 => sknp(x as usize, key_pressed, &registers, &mut program_counter),
+                    match variant {
+                        0x9E => skp(x as usize, key, &registers, &mut program_counter),
+                        0xA1 => sknp(x as usize, key, &registers, &mut program_counter),
 
-                		_ => {
-                			//TODO: raise error
-                		}
-                	}
+                        _ => {
+                            //TODO: raise error
+                        }
+                    }
                 }
                 0xF => match variant {
                     0x07 => ld_delay_to_reg(x as usize, Arc::clone(&delay_timer), &mut registers),
@@ -470,19 +525,22 @@ fn main() {
                     0x55 => ld_bcd(x as usize, &registers, &index_register, &mut memory),
                     0x65 => ld_x_regs(x as usize, &mut registers, &mut index_register, &memory),
                     _ => {
-                    	//TODO: raise error
+                        //TODO: raise error
                     }
                 },
 
                 _ => {
-                	//TODO: raise error
+                    //TODO: raise error
                 }
             };
 
             program_counter += 2;
         }
 
-        //TODO: calculate dynamic sleep duration
-        thread::sleep(Duration::from_millis(2));
+        let thread_duration = thread_duration.elapsed().subsec_nanos() / 1_000_000;
+        if thread_duration < MAIN_THREAD_MS {
+        	let thread_duration: u64 = (MAIN_THREAD_MS - thread_duration).into();
+        	thread::sleep(Duration::from_millis(thread_duration));
+        }
     }
 }
