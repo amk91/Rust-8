@@ -5,4 +5,4 @@ authors = ["amk"]
 
 [dependencies]
 rand = "*"
-termion = "*"
+sdl2="*"
