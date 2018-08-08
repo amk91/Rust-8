@@ -1,16 +1,13 @@
 use support::type_defs::*;
-use support::utilities::get_key_from_keyboard;
+use support::get_key_from_keyboard;
 
 extern crate rand;
 use support::op_functions::rand::prelude::*;
 
-use std::sync::{Arc, Mutex};
-
 extern crate sdl2;
 use sdl2::EventPump;
 
-pub fn cls(frame_buffer: Arc<Mutex<FrameBuffer>>) {
-    let mut frame_buffer = frame_buffer.lock().unwrap();
+pub fn cls(frame_buffer: &mut FrameBuffer) {
     for row in frame_buffer.iter_mut() {
         for p in row.iter_mut() {
             *p = false;
@@ -178,9 +175,8 @@ pub fn drw(
     registers: &mut Registers,
     index_register: u16,
     memory: &Memory,
-    frame_buffer: Arc<Mutex<FrameBuffer>>,
+    frame_buffer: &mut FrameBuffer,
 ) {
-    let mut frame_buffer = frame_buffer.lock().unwrap();
     for i in 0..bytes_number {
         let byte = memory[(index_register + u16::from(i)) as usize];
         let y = registers[vy + usize::from(i)] as usize;
@@ -230,10 +226,10 @@ pub fn sknp(
 }
 
 pub fn ld_delay_to_reg(
-    vx: usize, delay_timer: Arc<Mutex<u8>>,
+    vx: usize,
+    delay_timer: &mut u8,
     registers: &mut Registers
 ) {
-    let delay_timer = delay_timer.lock().unwrap();
     registers[vx] = *delay_timer;
 }
 
@@ -244,7 +240,7 @@ pub fn ld_key(
 ) {
     let mut key: Option<u8> = None;
     while key.is_none() {
-        key = get_key_from_keyboard(&mut event_pump);
+        key = get_key_from_keyboard(event_pump);
     }
 
     match key {
@@ -254,19 +250,18 @@ pub fn ld_key(
 }
 
 pub fn ld_reg_to_delay(
-    vx: usize, delay_timer: Arc<Mutex<u8>>,
+    vx: usize,
+    delay_timer: &mut u8,
     registers: &Registers
 ) {
-    let mut delay_timer = delay_timer.lock().unwrap();
     *delay_timer = registers[vx];
 }
 
 pub fn ld_reg_to_sound(
     vx: usize,
-    sound_timer: Arc<Mutex<u8>>,
+    sound_timer: &mut u8,
     registers: &Registers
 ) {
-    let mut sound_timer = sound_timer.lock().unwrap();
     *sound_timer = registers[vx];
 }
 
