@@ -1,10 +1,7 @@
 use support::type_defs::*;
-use support::get_key_from_keyboard;
 
 extern crate rand;
 use support::cpu::rand::Rng;
-
-use sdl2::EventPump;
 
 use std::fs::File;
 use std::io::Read;
@@ -135,116 +132,115 @@ impl Cpu {
 	    }
 	}
 
-	pub fn tick(&mut self, event_pump: &mut EventPump) {
-		let mut key: Option<u8> = None;
-		if self.wait_for_key {
-			while key.is_none() {
-				key = get_key_from_keyboard(event_pump);
-			}
-
+	pub fn tick(&mut self, key: Option<u8>) {
+		if self.wait_for_key && key.is_some() {
 			self.registers[self.key_register] = key.unwrap();
 			self.wait_for_key = false;
 			self.key_register = 0;
 		}
 
-        let op = self.get_op_code();
+		if !self.wait_for_key
+		{        
+			let op = self.get_op_code();
+	    	self.jump = false;
+	        match op {
+	        	OpCode { code: 0x0, variant: Some(0xE0), .. } => self.cls(),
+	        	OpCode { code: 0x0, variant: Some(0xEE), .. } => self.ret(),
+	    		OpCode { code: 0x1, x: Some(x), .. } => self.jp_addr(x),
+				OpCode { code: 0x2, x: Some(x), .. } => self.call_addr(x),
+				OpCode { code: 0x3, x: Some(x), y: Some(y), .. } => {
+					self.se(x as usize, y as u8);
+				},
+				OpCode { code: 0x4, x: Some(x), y: Some(y), .. } => {
+					self.sne(x as usize, y as u8);
+				},
+				OpCode { code: 0x5, x: Some(x), y: Some(y), .. } => {
+					self.se_regs(x as usize, y as usize);
+				},
+				OpCode { code: 0x6, x: Some(x), y: Some(y), .. } => {
+					self.ld(x as usize, y as u8);
+				},
+	            OpCode { code: 0x7, x: Some(x), y: Some(y), .. } => {
+	            	self.add(x as usize, y as u8);
+	            },
+	            OpCode { code: 0x8, x: Some(x), y: Some(y), variant: Some(0x0) } => {
+	            	self.ld_regs(x as usize, y as usize);
+	            },
+	            OpCode { code: 0x8, x: Some(x), y: Some(y), variant: Some(0x1) } => {
+	            	self.or(x as usize, y as usize);
+	            },
+	            OpCode { code: 0x8, x: Some(x), y: Some(y), variant: Some(0x2) } => {
+	            	self.and(x as usize, y as usize);
+	            },
+	            OpCode { code: 0x8, x: Some(x), y: Some(y), variant: Some(0x3) } => {
+	            	self.xor(x as usize, y as usize);
+	            },
+	            OpCode { code: 0x8, x: Some(x), y: Some(y), variant: Some(0x4) } => {
+	            	self.add_regs(x as usize, y as usize);
+	            },
+	            OpCode { code: 0x8, x: Some(x), y: Some(y), variant: Some(0x5) } => {
+	            	self.sub_regs(x as usize, y as usize);
+	            },
+	            OpCode { code: 0x8, x: Some(x), variant: Some(0x6), .. } => {
+	            	self.shr(x as usize);
+	            },
+	            OpCode { code: 0x8, x: Some(x), y: Some(y), variant: Some(0x7) } => {
+	            	self.subn_regs(x as usize, y as usize);
+	            },
+	            OpCode { code: 0x8, x: Some(x), variant: Some(0xE), .. } => {
+	            	self.shl(x as usize);
+	            },
+	            OpCode { code: 0x9, x: Some(x), y: Some(y), .. } => {
+	            	self.sne_regs(x as usize, y as usize);
+	            },
+	            OpCode { code: 0xA, x: Some(x), .. } => self.ld_reg_index(x),
+	            OpCode { code: 0xB, x: Some(x), .. } => self.jp_v0(x as u16),
+	            OpCode { code: 0xC, x: Some(x), y: Some(y), .. } => {
+	            	self.rnd(x as usize, y as u8);
+	            },
+	            OpCode { code: 0xD, x: Some(x), y: Some(y), variant: Some(variant) } => {
+	            	self.drw(x as usize, y as usize, variant);
+	            },
+	            OpCode { code: 0xE, x: Some(x), variant: Some(0x9E), .. } => {
+	            	self.skp(x as usize, key);
+	            },
+	            OpCode { code: 0xE, x: Some(x), variant: Some(0xA1), .. } => {
+	            	self.sknp(x as usize, key);
+	            },
+	            OpCode { code: 0xF, x: Some(x), variant: Some(0x7), .. } => {
+	            	self.ld_delay_to_reg(x as usize);
+	            },
+	            OpCode { code: 0xF, x: Some(x),	 variant: Some(0x0A), .. } => {
+	            	self.ld_key(x as usize);
+	            },
+	            OpCode { code: 0xF, x: Some(x), variant: Some(0x15), .. } => {
+	            	self.ld_reg_to_delay(x as usize);
+	            },
+	            OpCode { code: 0xF, x: Some(x), variant: Some(0x18), .. } => {
+	            	self.ld_reg_to_sound(x as usize);
+	            },
+	            OpCode { code: 0xF, x: Some(x), variant: Some(0x1E), .. } => {
+	            	self.add_reg_index(x as usize);
+	            },
+	            OpCode { code: 0xF, x: Some(x), variant: Some(0x29), .. } => {
+	            	self.ld_sprite(x as usize);
+	            },
+	            OpCode { code: 0xF, x: Some(x), variant: Some(0x33), .. } => {
+	            	self.ld_bcd(x as usize);
+	            },
+	            OpCode { code: 0xF, x: Some(x), variant: Some(0x55), .. } => {
+	            	self.ld_regs_to_mem(x as usize);
+	            },
+	            OpCode { code: 0xF, x: Some(x), variant: Some(0x65), .. } => {
+	            	self.ld_mem_to_regs(x as usize);
+	            },
+	            _ => { },
+	        };
 
-    	self.jump = false;
-        match op {
-        	OpCode { code: 0x0, variant: Some(0xE0), .. } => self.cls(),
-        	OpCode { code: 0x0, variant: Some(0xEE), .. } => self.ret(),
-    		OpCode { code: 0x1, x: Some(x), .. } => self.jp_addr(x),
-			OpCode { code: 0x2, x: Some(x), .. } => self.call_addr(x),
-			OpCode { code: 0x3, x: Some(x), y: Some(y), .. } => self.se(
-				x as usize,
-				y as u8,
-			),
-			OpCode { code: 0x4, x: Some(x), y: Some(y), .. } => self.sne(
-				x as usize,
-				y as u8,
-			),
-			OpCode { code: 0x5, x: Some(x), y: Some(y), .. } => self.se_regs(
-				x as usize,
-				y as usize,
-			),
-			OpCode { code: 0x6, x: Some(x), y: Some(y), .. } => self.ld(
-                x as usize,
-                y as u8,
-            ),
-            OpCode { code: 0x7, x: Some(x), y: Some(y), .. } => self.add(
-                x as usize,
-                y as u8
-            ),
-            OpCode { code: 0x8, x: Some(x), y: Some(y), variant: Some(0x0) } => self.ld_regs(
-            	x as usize,
-            	y as usize,
-            ),
-            OpCode { code: 0x8, x: Some(x), y: Some(y), variant: Some(0x1) } => self.or(
-            	x as usize,
-            	y as usize,
-            ),
-            OpCode { code: 0x8, x: Some(x), y: Some(y), variant: Some(0x2) } => self.and(
-                x as usize,
-                y as usize,
-            ),
-            OpCode { code: 0x8, x: Some(x), y: Some(y), variant: Some(0x3) } => self.xor(
-            	x as usize,
-            	y as usize,
-            ),
-            OpCode { code: 0x8, x: Some(x), y: Some(y), variant: Some(0x4) } => self.add_regs(
-            	x as usize,
-            	y as usize,
-            ),
-            OpCode { code: 0x8, x: Some(x), y: Some(y), variant: Some(0x5) } => self.sub_regs(
-            	x as usize,
-            	y as usize,
-            ),
-            OpCode { code: 0x8, x: Some(x), variant: Some(0x6), .. } => self.shr(x as usize),
-            OpCode { code: 0x8, x: Some(x), y: Some(y), variant: Some(0x7) } => self.subn_regs(
-            	x as usize,
-            	y as usize,
-            ),
-            OpCode { code: 0x8, x: Some(x), variant: Some(0xE), .. } => self.shl(
-            	x as usize,
-            ),
-            OpCode { code: 0x9, x: Some(x), y: Some(y), .. } => self.sne_regs(
-                x as usize,
-                y as usize,
-            ),
-            OpCode { code: 0xA, x: Some(x), .. } => self.ld_reg_index(x),
-            OpCode { code: 0xB, x: Some(x), .. } => self.jp_v0(x as u16),
-            OpCode { code: 0xC, x: Some(x), y: Some(y), .. } => self.rnd(
-            	x as usize,
-            	y as u8,
-            ),
-            OpCode { code: 0xD, x: Some(x), y: Some(y), variant: Some(variant) } => self.drw(
-                x as usize,
-                y as usize,
-                variant
-            ),
-            OpCode { code: 0xE, x: Some(x), variant: Some(0x9E), .. } => self.skp(
-            	x as usize,
-            	key,
-            ),
-            OpCode { code: 0xE, x: Some(x), variant: Some(0xA1), .. } => self.sknp(
-            	x as usize,
-            	key,
-            ),
-            OpCode { code: 0xF, x: Some(x), variant: Some(0x7), .. } => self.ld_delay_to_reg(x as usize),
-            OpCode { code: 0xF, x: Some(x),	 variant: Some(0x0A), .. } => self.ld_key(x as usize),
-            OpCode { code: 0xF, x: Some(x), variant: Some(0x15), .. } => self.ld_reg_to_delay(x as usize),
-            OpCode { code: 0xF, x: Some(x), variant: Some(0x18), .. } => self.ld_reg_to_sound(x as usize),
-            OpCode { code: 0xF, x: Some(x), variant: Some(0x1E), .. } => self.add_reg_index(x as usize),
-            OpCode { code: 0xF, x: Some(x), variant: Some(0x29), .. } => self.ld_sprite(x as usize),
-            OpCode { code: 0xF, x: Some(x), variant: Some(0x33), .. } => self.ld_bcd(x as usize),
-            OpCode { code: 0xF, x: Some(x), variant: Some(0x55), .. } => self.ld_regs_to_mem(x as usize),
-            OpCode { code: 0xF, x: Some(x), variant: Some(0x65), .. } => self.ld_mem_to_regs(x as usize),
-            _ => { },
-        };
-
-        if !self.jump {
-        	self.program_counter += 2;
-        }
+	        if !self.jump {
+	        	self.program_counter += 2;
+	        }
+    	}
 	}
 
 	fn cls(&mut self) {
@@ -390,7 +386,7 @@ impl Cpu {
 	                self.program_counter += 2;
 	            }
 	        }
-	        None => {}
+	        None => { }
 	    }
 	}
 

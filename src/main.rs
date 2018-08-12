@@ -1,13 +1,11 @@
 mod support;
 use support::*;
 
-use std::time::{Duration, Instant};
+use std::time::{ Duration, Instant };
 use std::thread;
 use std::env;
 
 extern crate sdl2;
-use sdl2::event::Event;
-use sdl2::keyboard::Keycode;
 
 fn main() {
     let sdl_context = sdl2::init().unwrap();
@@ -24,49 +22,70 @@ fn main() {
         cpu.load_rom(&args[1]);
     }
 
-    let mut cpu_tick_countdown = MAIN_THREAD_MS;
-    let mut devices_tick_countdown = SEC_THREAD_MS;
-    'running: loop {
+    let mut cpu_tick_countdown = Duration::from_nanos(MAIN_THREAD_NS);
+    let mut add_cpu_tick_countdown = false;
+    let mut devices_tick_countdown = Duration::from_nanos(SEC_THREAD_NS);
+    let mut add_devices_tick_countdown = false;
+    //let mut dt = Instant::now();
+    loop {
         let thread_duration = Instant::now();
 
-        if cpu_tick_countdown <= 0 {
-            cpu.tick(&mut event_pump);
-            cpu_tick_countdown = MAIN_THREAD_MS;
+        let key = get_key_from_keyboard(&mut event_pump);        
+
+        if cpu_tick_countdown >= Duration::from_nanos(MAIN_THREAD_NS) {
+            cpu.tick(key);
+            cpu_tick_countdown = Duration::from_nanos(0);
         } else {
-            cpu_tick_countdown -= 1;
+            add_cpu_tick_countdown = true;
         }
 
-        if devices_tick_countdown <= 0 {
+        if devices_tick_countdown >= Duration::from_nanos(SEC_THREAD_NS) {
+            // println!("{} - {}", devices_tick_countdown.subsec_millis(), dt.elapsed().subsec_millis());
+            // dt = Instant::now();
+
             display.draw(cpu.get_frame_buffer());
+
+            if !cpu.is_sound_timer_zero() {
+                //TODO: sound the buzzer
+                cpu.decrease_sound_timer();
+            }
 
             if !cpu.is_delay_timer_zero() {
                 cpu.decrease_delay_timer();
             }
 
-            if !cpu.is_sound_timer_zero() {
-                cpu.decrease_sound_timer();
-                //TODO: sound the buzz
-            }
-
-            devices_tick_countdown = SEC_THREAD_MS;
+            devices_tick_countdown = Duration::from_nanos(0);
         } else {
-            devices_tick_countdown -= 1;
+            add_devices_tick_countdown = true;
         }
 
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit {..} | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                    break 'running;
-                },
-                _ => { },
+        let thread_duration = thread_duration.elapsed().subsec_nanos() as u64;
+        if thread_duration < THREAD_SLEEP_NS {
+            let duration = Duration::from_nanos(THREAD_SLEEP_NS - thread_duration);
+            if add_cpu_tick_countdown {
+                cpu_tick_countdown += duration;
+                add_cpu_tick_countdown = false;
             }
-        }
 
-        let thread_duration = thread_duration.
-            elapsed().subsec_nanos() / 1_000_000;
+            if add_devices_tick_countdown {
+                devices_tick_countdown += duration;
+                add_devices_tick_countdown = false;
+            }
 
-        if thread_duration < 1 {
-            thread::sleep(Duration::from_millis(u64::from(1 - thread_duration)));
+            thread::sleep(duration);
+        } else {
+            if add_cpu_tick_countdown {
+                //cpu_tick_countdown += Duration::from_nanos(1_000_000);
+                add_cpu_tick_countdown = false;
+            }
+
+            if add_devices_tick_countdown {
+                //devices_tick_countdown += Duration::from_nanos(1_000_000);
+                add_devices_tick_countdown = false;
+            }
+
+            thread::sleep(Duration::from_nanos(0));
+            println!("thread duration {}", thread_duration);
         }
     }
 }
