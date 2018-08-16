@@ -24,8 +24,6 @@ pub struct Cpu {
 
     wait_for_key: bool,
     key_register: usize,
-
-    pub quit: bool,
 }
 
 impl Cpu {
@@ -57,8 +55,6 @@ impl Cpu {
 
 			wait_for_key: false,
 			key_register: 0,
-
-			quit: false,
 		}
 	}
 
@@ -254,6 +250,8 @@ impl Cpu {
 	fn ret(&mut self) {
 	    self.stack_pointer -= 1;
 	    self.program_counter = self.stack[self.stack_pointer];
+
+	    self.jump = true;
 	}
 
 	fn jp_addr(&mut self, address: u16) {
@@ -263,7 +261,7 @@ impl Cpu {
 	}
 
 	fn call_addr(&mut self, address: u16) {
-	    self.stack[self.stack_pointer] = self.program_counter;
+	    self.stack[self.stack_pointer] = self.program_counter + 2;
 	    self.stack_pointer += 1;
 	    self.program_counter = address;
 	    
@@ -325,19 +323,19 @@ impl Cpu {
 	}
 
 	fn shr(&mut self, vx: usize) {
-	    self.registers[N_REGISTERS - 1] = self.registers[vx] & 0b0000_0001;
-	    self.registers[vx] /= 2;
+	    self.registers[0x0F] = self.registers[vx] & 0b0000_0001;
+	    self.registers[vx] >>= 1;
 	}
 
 	fn subn_regs(&mut self, vx: usize, vy: usize) {
 	    let result = self.registers[vy].overflowing_sub(self.registers[vx]);
 	    self.registers[vx] = result.0;
-	    self.registers[N_REGISTERS - 1] = result.1 as u8;
+	    self.registers[0x0F] = result.1 as u8;
 	}
 
 	fn shl(&mut self, vx: usize) {
-	    self.registers[N_REGISTERS - 1] = self.registers[vx] & 0b1000_0000;
-	    self.registers[vx] *= 2;
+	    self.registers[0x0F] = self.registers[vx] & 0b1000_0000;
+	    self.registers[vx] <<= 2;
 	}
 
 	fn sne_regs(&mut self, vx: usize, vy: usize) {
@@ -357,26 +355,26 @@ impl Cpu {
 
 	fn rnd(&mut self, vx: usize, value: u8) {
 	    let mut rng = rand::thread_rng();
-	    let result: u8 = rng.gen::<u8>() & value;
-	    self.registers[vx] = result;
+	    self.registers[vx] = rng.gen::<u8>() & value;
 	}
 
 	fn drw(&mut self, vx: usize, vy: usize, bytes_number: u8) {
-	    self.registers[0xF] = 0;
-	    for row in 0..bytes_number {
-	        let y = usize::from((self.registers[vy] + row) %N_FRAMEBUFFER_HEIGHT as u8);
-            let byte = self.memory[(self.index_register + row as u16) as usize];
-	        for bit in 0..8 {
-	            let x = usize::from((self.registers[vx] + bit) % N_FRAMEBUFFER_WIDTH as u8);
-	            let new_pixel = (byte & (1 << (7 - bit))) > 0;
-	            let old_pixel = self.frame_buffer[x][y];
-	            self.frame_buffer[x][y] ^= new_pixel;
+		self.registers[0xF] = 0;
+		for row in 0..bytes_number {
+			let y = usize::from((self.registers[vy] + row) % N_FRAMEBUFFER_HEIGHT as u8);
+			let byte = self.memory[self.index_register as usize + row as usize];
+			for bit in 0..8 {
+				let x = usize::from((self.registers[vx] + bit) % N_FRAMEBUFFER_WIDTH as u8);
+				let new_pixel = (byte >> (7 - bit) & 1) == 1;
+				let old_pixel = self.frame_buffer[x][y];
+				self.frame_buffer[x][y] ^= new_pixel;
 
-	            if new_pixel == old_pixel {
-	                self.registers[0xF] = 1;
-	            }
-	        }
-	    }
+				if !self.frame_buffer[x][y] && old_pixel {
+					self.registers[0xF] = 1;
+				}
+
+			}
+		}
 	}
 
 	fn skp(&mut self, vx: usize, key: Option<u8>) {
@@ -397,7 +395,7 @@ impl Cpu {
 	                self.program_counter += 2;
 	            }
 	        }
-	        None => {}
+	        None => { }
 	    }
 	}
 
@@ -420,6 +418,7 @@ impl Cpu {
 
 	fn add_reg_index(&mut self, vx: usize) {
 	    self.index_register += u16::from(self.registers[vx]);
+	    self.registers[0x0F] = if self.index_register > 0x0F00 { 1 } else { 0 };
 	}
 
 	fn ld_sprite(&mut self, vx: usize) {
@@ -427,9 +426,9 @@ impl Cpu {
 	}
 
 	fn ld_bcd(&mut self, vx: usize) {
-	    let h = (self.registers[vx] / 100) & 0b0000_0111;
-	    let d = (self.registers[vx] / 10) & 0b0000_0111;
-	    let u = self.registers[vx] & 0b0000_0111;
+	    let h = self.registers[vx] / 100;
+	    let d = (self.registers[vx] % 100) / 10;
+	    let u = self.registers[vx] % 10;
 
 	    self.memory[self.index_register as usize] = h;
 	    self.memory[(self.index_register + 1) as usize] = d;
@@ -440,15 +439,11 @@ impl Cpu {
 		for i in 0..vx + 1 {
 			self.memory[usize::from(self.index_register) + i] = self.registers[i];
 		}
-
-	    self.index_register += vx as u16 + 1;
 	}
 
 	fn ld_mem_to_regs(&mut self, vx: usize) {
 	    for i in 0..vx + 1 {
 	        self.registers[i] = self.memory[usize::from(self.index_register) + i];
 	    }
-
-	    self.index_register += vx as u16 + 1;
 	}
 }

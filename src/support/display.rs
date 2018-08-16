@@ -45,8 +45,6 @@ impl Display {
 	}
 
 	pub fn draw(&mut self, frame_buffer: FrameBuffer) {
-		self.canvas.set_draw_color(Color::RGB(0, 0, 0));
-		self.canvas.clear();
 		for x in 0..N_FRAMEBUFFER_WIDTH {
 			for y in 0..N_FRAMEBUFFER_HEIGHT {
 				if frame_buffer[x][y] {

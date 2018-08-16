@@ -5,10 +5,6 @@ pub const N_FRAMEBUFFER_HEIGHT: usize = 32;
 pub const N_MEMORY: usize = 4096;
 pub const N_SPRITES: usize = 16;
 
-pub const THREAD_SLEEP_NS: u64 = 2_000_000;
-pub const MAIN_THREAD_NS: u64 = 2_000_000;
-pub const SEC_THREAD_NS: u64 = 17_000_000;
-
 pub type Registers = [u8; N_REGISTERS];
 pub type Stack = [u16; N_STACK];
 pub type FrameBuffer = [[bool; N_FRAMEBUFFER_HEIGHT]; N_FRAMEBUFFER_WIDTH];
