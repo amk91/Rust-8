@@ -30,16 +30,12 @@ fn main() {
         let key = get_key_from_keyboard(&mut event_pump);
         
         if cpu_clock.since() >= 0.002 {
-            println!("cpu {}", cpu_clock.since());
-
             cpu.tick(key);
 
             cpu_clock = Clock::new();
         }
 
         if devices_clock.since() >= 0.017 {
-            println!("devices {}", devices_clock.since());
-
             display.draw(cpu.get_frame_buffer());
 
             if !cpu.is_delay_timer_zero() {

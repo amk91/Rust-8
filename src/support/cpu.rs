@@ -323,7 +323,7 @@ impl Cpu {
 	}
 
 	fn shr(&mut self, vx: usize) {
-	    self.registers[0x0F] = self.registers[vx] & 0b0000_0001;
+	    self.registers[0xF] = self.registers[vx] & 0b0000_0001;
 	    self.registers[vx] >>= 1;
 	}
 
@@ -334,8 +334,8 @@ impl Cpu {
 	}
 
 	fn shl(&mut self, vx: usize) {
-	    self.registers[0x0F] = self.registers[vx] & 0b1000_0000;
-	    self.registers[vx] <<= 2;
+	    self.registers[0xF] = self.registers[vx] & 0b1000_0000;
+	    self.registers[vx] <<= 1;
 	}
 
 	fn sne_regs(&mut self, vx: usize, vy: usize) {
@@ -366,13 +366,8 @@ impl Cpu {
 			for bit in 0..8 {
 				let x = usize::from((self.registers[vx] + bit) % N_FRAMEBUFFER_WIDTH as u8);
 				let new_pixel = (byte >> (7 - bit) & 1) == 1;
-				let old_pixel = self.frame_buffer[x][y];
+				self.registers[0xF] |= u8::from(new_pixel & self.frame_buffer[x][y]);
 				self.frame_buffer[x][y] ^= new_pixel;
-
-				if !self.frame_buffer[x][y] && old_pixel {
-					self.registers[0xF] = 1;
-				}
-
 			}
 		}
 	}
@@ -418,7 +413,6 @@ impl Cpu {
 
 	fn add_reg_index(&mut self, vx: usize) {
 	    self.index_register += u16::from(self.registers[vx]);
-	    self.registers[0x0F] = if self.index_register > 0x0F00 { 1 } else { 0 };
 	}
 
 	fn ld_sprite(&mut self, vx: usize) {
